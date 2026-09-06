@@ -2,10 +2,7 @@
 
 An ultra-fast, zero-overhead custom statusline binary for [Claude Code](https://docs.anthropic.com/en/docs/agents-and-tools/claude-code), written in Rust.
 
-```text
-Claude 3.7 Sonnet medium · ~/src/lumen (main) · ctx 15% (30k/200k)
-5h 82% (3h25m) · 7d 18% (1d0h)
-```
+![claude-statusline preview](assets/statusline.png)
 
 ## Highlights
 
@@ -20,10 +17,10 @@ Claude 3.7 Sonnet medium · ~/src/lumen (main) · ctx 15% (30k/200k)
 
 Measured on Linux (x86_64, 50 iterations):
 
-| Implementation | Mean Latency | Min | Max | Subprocesses | CPU Overhead |
-|---|---|---|---|---|---|
-| Bash + jq script | 24.70 ms | 11.29 ms | 97.27 ms | 6-8 per render | High during streaming |
-| **Rust binary** | **0.50 ms** | **0.43 ms** | **1.02 ms** | **0 (native)** | **~0%** |
+| Implementation | Mean Latency | Min | Max | Subprocesses |
+|---|---|---|---|---|
+| Bash + jq script | 24.70 ms | 11.29 ms | 97.27 ms | 6-8 per render |
+| **Rust binary** | **0.50 ms** | **0.43 ms** | **1.02 ms** | **0 (native)** |
 
 **Result:** ~50x faster execution and zero subprocess forks per render tick.
 
