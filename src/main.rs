@@ -145,18 +145,17 @@ fn get_git_branch(mut dir: &Path) -> Option<String> {
             let head_file = git_entry.join("HEAD");
             return parse_git_head(&head_file);
         } else if git_entry.is_file() {
-            if let Ok(content) = std::fs::read_to_string(&git_entry) {
-                if let Some(line) = content.lines().next() {
-                    if let Some(rel_or_abs) = line.strip_prefix("gitdir:") {
-                        let gitdir = rel_or_abs.trim();
-                        let target: PathBuf = if Path::new(gitdir).is_absolute() {
-                            gitdir.into()
-                        } else {
-                            dir.join(gitdir)
-                        };
-                        return parse_git_head(&target.join("HEAD"));
-                    }
-                }
+            if let Ok(content) = std::fs::read_to_string(&git_entry)
+                && let Some(line) = content.lines().next()
+                && let Some(rel_or_abs) = line.strip_prefix("gitdir:")
+            {
+                let gitdir = rel_or_abs.trim();
+                let target: PathBuf = if Path::new(gitdir).is_absolute() {
+                    gitdir.into()
+                } else {
+                    dir.join(gitdir)
+                };
+                return parse_git_head(&target.join("HEAD"));
             }
             return None;
         }
@@ -187,7 +186,10 @@ fn parse_git_head(head_path: &Path) -> Option<String> {
     }
 }
 
-fn sync_rate_limits(incoming: Option<RateLimitsInfo>) -> (Option<(i64, Option<i64>)>, Option<(i64, Option<i64>)>) {
+/// (used_percentage, resets_at)
+type QuotaState = Option<(i64, Option<i64>)>;
+
+fn sync_rate_limits(incoming: Option<RateLimitsInfo>) -> (QuotaState, QuotaState) {
     let home = std::env::var("HOME").unwrap_or_default();
     let cache_dir = Path::new(&home).join(".cache").join("claude");
     let cache_file = cache_dir.join("ratelimits.json");
@@ -219,43 +221,43 @@ fn sync_rate_limits(incoming: Option<RateLimitsInfo>) -> (Option<(i64, Option<i6
     let mut dirty = false;
 
     if let Some(ref inc) = incoming {
-        if let Some(ref fh) = inc.five_hour {
-            if let Some(used) = fh.used_percentage {
-                let used_i = used.round() as i64;
-                let reset_i = fh.resets_at.map(|r| r.round() as i64);
+        if let Some(ref fh) = inc.five_hour
+            && let Some(used) = fh.used_percentage
+        {
+            let used_i = used.round() as i64;
+            let reset_i = fh.resets_at.map(|r| r.round() as i64);
 
-                if reset_i != cached.five_hour_resets_at && reset_i.is_some() {
-                    cached.five_hour_used = Some(used_i);
+            if reset_i != cached.five_hour_resets_at && reset_i.is_some() {
+                cached.five_hour_used = Some(used_i);
+                cached.five_hour_resets_at = reset_i;
+                dirty = true;
+            } else {
+                let cur_used = cached.five_hour_used.unwrap_or(0);
+                cached.five_hour_used = Some(used_i.max(cur_used));
+                if reset_i.is_some() {
                     cached.five_hour_resets_at = reset_i;
-                    dirty = true;
-                } else {
-                    let cur_used = cached.five_hour_used.unwrap_or(0);
-                    cached.five_hour_used = Some(used_i.max(cur_used));
-                    if reset_i.is_some() {
-                        cached.five_hour_resets_at = reset_i;
-                    }
-                    dirty = true;
                 }
+                dirty = true;
             }
         }
 
-        if let Some(ref sd) = inc.seven_day {
-            if let Some(used) = sd.used_percentage {
-                let used_i = used.round() as i64;
-                let reset_i = sd.resets_at.map(|r| r.round() as i64);
+        if let Some(ref sd) = inc.seven_day
+            && let Some(used) = sd.used_percentage
+        {
+            let used_i = used.round() as i64;
+            let reset_i = sd.resets_at.map(|r| r.round() as i64);
 
-                if reset_i != cached.seven_day_resets_at && reset_i.is_some() {
-                    cached.seven_day_used = Some(used_i);
+            if reset_i != cached.seven_day_resets_at && reset_i.is_some() {
+                cached.seven_day_used = Some(used_i);
+                cached.seven_day_resets_at = reset_i;
+                dirty = true;
+            } else {
+                let cur_used = cached.seven_day_used.unwrap_or(0);
+                cached.seven_day_used = Some(used_i.max(cur_used));
+                if reset_i.is_some() {
                     cached.seven_day_resets_at = reset_i;
-                    dirty = true;
-                } else {
-                    let cur_used = cached.seven_day_used.unwrap_or(0);
-                    cached.seven_day_used = Some(used_i.max(cur_used));
-                    if reset_i.is_some() {
-                        cached.seven_day_resets_at = reset_i;
-                    }
-                    dirty = true;
                 }
+                dirty = true;
             }
         }
     }
@@ -263,10 +265,10 @@ fn sync_rate_limits(incoming: Option<RateLimitsInfo>) -> (Option<(i64, Option<i6
     if dirty {
         cached.updated_at = Some(now);
         let tmp_file = cache_dir.join(format!("ratelimits.json.tmp.{}", std::process::id()));
-        if let Ok(json_str) = serde_json::to_string(&cached) {
-            if std::fs::write(&tmp_file, json_str).is_ok() {
-                let _ = std::fs::rename(&tmp_file, &cache_file);
-            }
+        if let Ok(json_str) = serde_json::to_string(&cached)
+            && std::fs::write(&tmp_file, json_str).is_ok()
+        {
+            let _ = std::fs::rename(&tmp_file, &cache_file);
         }
     }
 
@@ -276,8 +278,12 @@ fn sync_rate_limits(incoming: Option<RateLimitsInfo>) -> (Option<(i64, Option<i6
         }
     }
 
-    let fh_out = cached.five_hour_used.map(|u| (u, cached.five_hour_resets_at));
-    let sd_out = cached.seven_day_used.map(|u| (u, cached.seven_day_resets_at));
+    let fh_out = cached
+        .five_hour_used
+        .map(|u| (u, cached.five_hour_resets_at));
+    let sd_out = cached
+        .seven_day_used
+        .map(|u| (u, cached.seven_day_resets_at));
     (fh_out, sd_out)
 }
 
@@ -322,7 +328,9 @@ fn main() {
         let cur = c.total_input_tokens.or(c.total_tokens);
         let max = c.context_window_size;
         match (cur, max) {
-            (Some(cur_val), Some(max_val)) => Some(format!("{}/{}", fmt_tokens(cur_val), fmt_tokens(max_val))),
+            (Some(cur_val), Some(max_val)) => {
+                Some(format!("{}/{}", fmt_tokens(cur_val), fmt_tokens(max_val)))
+            }
             (Some(cur_val), None) => Some(fmt_tokens(cur_val)),
             _ => None,
         }
@@ -351,15 +359,6 @@ fn main() {
         }
     }
 
-    if let Some(pct) = ctx_pct {
-        let m = meter(pct);
-        if let Some(size) = ctx_size {
-            segs.push(format!("{m}ctx {pct}%{RESET} {DIM}({size}){RESET}"));
-        } else {
-            segs.push(format!("{m}ctx {pct}%{RESET}"));
-        }
-    }
-
     let sep = format!(" {DIM}·{RESET} ");
     let line1 = segs.join(&sep);
 
@@ -385,6 +384,15 @@ fn main() {
             quota_segs.push(format!("{m}7d {remaining}%{RESET} {DIM}({r}){RESET}"));
         } else {
             quota_segs.push(format!("{m}7d {remaining}%{RESET}"));
+        }
+    }
+
+    if let Some(pct) = ctx_pct {
+        let m = meter(pct);
+        if let Some(size) = ctx_size {
+            quota_segs.push(format!("{m}ctx {pct}%{RESET} {DIM}({size}){RESET}"));
+        } else {
+            quota_segs.push(format!("{m}ctx {pct}%{RESET}"));
         }
     }
 
