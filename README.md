@@ -70,18 +70,6 @@ Add or update the `statusLine` configuration in your `~/.claude/settings.json`:
 
 *(Alternatively, you can keep a shell wrapper script with `exec ~/.local/bin/claude-statusline "$@"`).*
 
-## How It Works
-
-1. Claude Code pipes session metrics JSON to `claude-statusline` on standard input (`stdin`).
-2. `claude-statusline` extracts:
-   - **Row 1:** Active model, effort level, shortened workspace path, and active Git branch.
-   - **Row 2:** 5-hour and 7-day rate limits with countdown timers until reset, followed by context window utilization (`used_percentage` and token ratio).
-3. Rate limits are synchronized to `~/.cache/claude/ratelimits.json` with thread/process-safe locking so external status bars (such as Waybar) always reflect accurate budgets.
-
-## Versioning
-
-This project follows [Semantic Versioning](https://semver.org/). Releases are tagged as `vX.Y.Z` and published on the [Releases](https://github.com/yesvus/claude-statusline/releases) page with prebuilt binaries. See [CHANGELOG.md](CHANGELOG.md) for a history of changes.
-
 ## License
 
 MIT © [yesvus](https://github.com/yesvus)
