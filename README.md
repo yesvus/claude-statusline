@@ -1,62 +1,64 @@
 # claude-statusline
 
-An ultra-fast, zero-overhead custom statusline binary for [Claude Code](https://docs.anthropic.com/en/docs/agents-and-tools/claude-code), written in Rust.
+Statusline command for [Claude Code](https://docs.anthropic.com/en/docs/agents-and-tools/claude-code), written in Rust. Replaces a bash + jq script with one native binary, so a render doesn't fork `jq`/`git`/`date` subprocesses.
 
 ![claude-statusline preview](assets/statusline.png)
 
-## Highlights
+## What it does
 
-- **Sub-Millisecond Execution (~0.5 ms):** Eliminates CPU spikes and terminal lag by replacing heavy shell scripts and multiple `jq`/`git`/`date` subprocesses with a native compiled binary.
-- **Terminal Native Colors:** Uses standard 16-color ANSI escapes rather than hardcoded 24-bit RGB values, automatically matching your terminal's active color scheme and theme.
-- **In-Process Git Resolution:** Detects the current Git branch and detached HEAD states directly in-process from `.git/HEAD` without spawning external `git` commands.
-- **Smart Path Shortening:** Intelligently collapses deep directories into clean breadcrumbs (e.g. `…/repo/subproject`) while preserving home shortcuts (`~`).
-- **Session-Safe Rate Limit Sync:** Synchronizes 5-hour and 7-day rate-limit budgets via file-locking (`flock`), preventing idle or stale sessions from overwriting fresh rate-limit telemetry.
-- **Waybar Widget Integration:** Atomically updates `~/.cache/claude/ratelimits.json` on every render for seamless desktop bar status modules.
+- reads Claude Code's session JSON from stdin
+- row 1: model, effort level, shortened workspace path, git branch (read directly from `.git/HEAD`, no `git` subprocess)
+- row 2: 5h/7d rate limits with reset countdowns, plus context window usage
+- writes rate limits to `~/.cache/claude/ratelimits.json` under a file lock, so something like Waybar can read them without racing a session
+- uses 16-color ANSI so it follows the terminal's theme instead of hardcoded RGB
 
-## Benchmarks
+## Comparison
 
-Measured on Linux (x86_64, 50 iterations):
+Measured on Linux, x86_64, 50 iterations:
 
-| Implementation | Mean Latency | Min | Max | Subprocesses |
-|---|---|---|---|---|
-| Bash + jq script | 24.70 ms | 11.29 ms | 97.27 ms | 6-8 per render |
-| **Rust binary** | **0.50 ms** | **0.43 ms** | **1.02 ms** | **0 (native)** |
+| | bash + jq script | claude-statusline |
+|---|---|---|
+| mean latency | 24.70 ms | 0.50 ms |
+| min / max | 11.29 ms / 97.27 ms | 0.43 ms / 1.02 ms |
+| subprocesses per render | 6-8 | 0 |
 
-**Result:** ~50x faster execution and zero subprocess forks per render tick.
+## Install
 
-## Installation
+### Prebuilt binary
 
-### Via AI Agent
+```bash
+os=$(uname -s); arch=$(uname -m)
+case "$os" in
+  Linux)  target="$([ "$arch" = aarch64 ] && echo aarch64 || echo x86_64)-unknown-linux-gnu" ;;
+  Darwin) target="$([ "$arch" = arm64 ] && echo aarch64 || echo x86_64)-apple-darwin" ;;
+esac
+curl -fsSL "https://github.com/yesvus/claude-statusline/releases/latest/download/claude-statusline-$target.tar.gz" \
+  | tar -xz -C ~/.local/bin
+chmod +x ~/.local/bin/claude-statusline
+```
 
-Give this prompt to Claude Code (or any coding agent with shell access) and it'll clone, build, install, and wire up `settings.json` for you:
+### Via AI agent
+
+Paste this into Claude Code (or any coding agent with shell access):
 
 ```
-Install yesvus/claude-statusline: clone https://github.com/yesvus/claude-statusline,
-build it from source with cargo (no prebuilt release binaries exist yet), install the
-resulting binary to ~/.local/bin/claude-statusline, then update the statusLine block in
+Install yesvus/claude-statusline: download the binary matching my OS/arch from the latest
+release at https://github.com/yesvus/claude-statusline/releases/latest, extract it to
+~/.local/bin/claude-statusline, make it executable, then update the statusLine block in
 ~/.claude/settings.json to point at it with "padding": 0.
 ```
 
-### From Source
+### From source
 
-Ensure you have Rust installed (`curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`):
+Requires Rust (`curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`):
 
 ```bash
 git clone https://github.com/yesvus/claude-statusline.git
 cd claude-statusline
-cargo build --release
-cp target/release/claude-statusline ~/.local/bin/
-```
-
-Or install directly with cargo:
-
-```bash
 cargo install --path .
 ```
 
 ## Configuration
-
-Add or update the `statusLine` configuration in your `~/.claude/settings.json`:
 
 ```json
 {
@@ -67,8 +69,6 @@ Add or update the `statusLine` configuration in your `~/.claude/settings.json`:
   }
 }
 ```
-
-*(Alternatively, you can keep a shell wrapper script with `exec ~/.local/bin/claude-statusline "$@"`).*
 
 ## License
 
