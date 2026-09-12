@@ -26,6 +26,17 @@ Measured on Linux (x86_64, 50 iterations):
 
 ## Installation
 
+### Via AI Agent
+
+Give this prompt to Claude Code (or any coding agent with shell access) and it'll clone, build, install, and wire up `settings.json` for you:
+
+```
+Install yesvus/claude-statusline: clone https://github.com/yesvus/claude-statusline,
+build it from source with cargo (no prebuilt release binaries exist yet), install the
+resulting binary to ~/.local/bin/claude-statusline, then update the statusLine block in
+~/.claude/settings.json to point at it with "padding": 0.
+```
+
 ### From Source
 
 Ensure you have Rust installed (`curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`):
