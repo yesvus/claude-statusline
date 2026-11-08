@@ -1,74 +1,107 @@
 # claude-statusline
 
-Statusline command for [Claude Code](https://docs.anthropic.com/en/docs/agents-and-tools/claude-code), written in Rust. Replaces a bash + jq script with one native binary, so a render doesn't fork `jq`/`git`/`date` subprocesses.
+A lightweight, native Rust statusline for [Claude Code](https://docs.anthropic.com/en/docs/agents-and-tools/claude-code). It reads the session JSON from stdin and avoids spawning `jq`, `git`, or `date` for every update.
 
-![claude-statusline preview](assets/statusline.png)
+![Claude Code statusline preview](assets/statusline.png)
 
-## What it does
+## Why use it?
 
-- reads Claude Code's session JSON from stdin
-- row 1: model, effort level, shortened workspace path, git branch (read directly from `.git/HEAD`, no `git` subprocess)
-- row 2: 5h/7d rate limits with reset countdowns, plus context window usage
-- writes rate limits to `~/.cache/claude/ratelimits.json` under a file lock, so something like Waybar can read them without racing a session
-- uses 16-color ANSI so it follows the terminal's theme instead of hardcoded RGB
+- **At-a-glance context:** model, effort level, abbreviated working directory, Git branch, context usage, and available 5-hour / 7-day rate-limit information.
+- **Low overhead:** a single native process instead of several shell subprocesses per render.
+- **Local quota cache:** stores rate-limit snapshots under `~/.cache/claude/ratelimits.json` with file locking, so other local tools can read them.
+- **Terminal-friendly:** uses standard 16-color ANSI output rather than fixed RGB colors.
 
-## Comparison
+**Supported prebuilt releases:** macOS (Apple Silicon and Intel), Linux (x86_64 and aarch64). Windows is not supported.
 
-Measured on Linux, x86_64, 50 iterations:
+## Install in under a minute
 
-| | bash + jq script | claude-statusline |
-|---|---|---|
-| mean latency | 24.70 ms | 0.50 ms |
-| min / max | 11.29 ms / 97.27 ms | 0.43 ms / 1.02 ms |
-| subprocesses per render | 6-8 | 0 |
+### Option A: Download a release
 
-## Install
-
-### Prebuilt binary
+Paste into a Bash or Zsh terminal. This downloads the binary for your OS/CPU, fails on unsupported platforms, and installs into `~/.local/bin` without overwriting your Claude configuration.
 
 ```bash
-os=$(uname -s); arch=$(uname -m)
-case "$os" in
-  Linux)  target="$([ "$arch" = aarch64 ] && echo aarch64 || echo x86_64)-unknown-linux-gnu" ;;
-  Darwin) target="$([ "$arch" = arm64 ] && echo aarch64 || echo x86_64)-apple-darwin" ;;
-esac
-curl -fsSL "https://github.com/yesvus/claude-statusline/releases/latest/download/claude-statusline-$target.tar.gz" \
-  | tar -xz -C ~/.local/bin
-chmod +x ~/.local/bin/claude-statusline
+(
+  set -eu
+  case "$(uname -s)-$(uname -m)" in
+    Darwin-arm64) target=aarch64-apple-darwin ;;
+    Darwin-x86_64) target=x86_64-apple-darwin ;;
+    Linux-aarch64|Linux-arm64) target=aarch64-unknown-linux-gnu ;;
+    Linux-x86_64) target=x86_64-unknown-linux-gnu ;;
+    *) echo "Unsupported platform: $(uname -s)-$(uname -m)" >&2; exit 1 ;;
+  esac
+
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' EXIT
+  mkdir -p "$HOME/.local/bin"
+  curl --fail --location --retry 2 --output "$tmp/release.tar.gz" \
+    "https://github.com/yesvus/claude-statusline/releases/latest/download/claude-statusline-${target}.tar.gz"
+  tar -xzf "$tmp/release.tar.gz" -C "$tmp" claude-statusline
+  install -m 755 "$tmp/claude-statusline" "$HOME/.local/bin/claude-statusline"
+  echo "Installed: $HOME/.local/bin/claude-statusline"
+)
 ```
 
-### Via AI agent
+For security, review release assets before installing executables. The archives are currently published without separate checksum files; signature/checksum verification is not yet provided.
 
-Paste this into Claude Code (or any coding agent with shell access):
+### Option B: Build from source
 
-```
-Install yesvus/claude-statusline: download the binary matching my OS/arch from the latest
-release at https://github.com/yesvus/claude-statusline/releases/latest, extract it to
-~/.local/bin/claude-statusline, make it executable, then update the statusLine block in
-~/.claude/settings.json to point at it with "padding": 0.
-```
-
-### From source
-
-Requires Rust (`curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`):
+Requires Rust:
 
 ```bash
 git clone https://github.com/yesvus/claude-statusline.git
 cd claude-statusline
-cargo install --path .
+cargo install --locked --path .
 ```
 
-## Configuration
+This installs to Cargo's binary directory (usually `~/.cargo/bin`) rather than `~/.local/bin`.
+
+## Connect it to Claude Code
+
+Open `~/.claude/settings.json`. **Merge** the `statusLine` property into your existing settings; do not replace other keys. Set `command` to the **absolute path** where you installed the binary:
 
 ```json
 {
   "statusLine": {
     "type": "command",
-    "command": "/home/yesvus/.local/bin/claude-statusline",
+    "command": "/absolute/path/to/claude-statusline",
     "padding": 0
   }
 }
 ```
+
+For the prebuilt install, run `echo "$HOME/.local/bin/claude-statusline"` to get that path; for a Cargo install, run `command -v claude-statusline`.
+
+### Verify before opening Claude Code
+
+```bash
+printf '%s\n' '{"model":{"display_name":"Smoke test"},"context_window":{"used_percentage":25}}' \
+  | "$HOME/.local/bin/claude-statusline"
+```
+
+If you installed via Cargo, replace the executable path with `$(command -v claude-statusline)`. The command should print a short colored statusline. Missing quota values are omitted, not invented.
+
+## Performance comparison
+
+Recorded on Linux x86_64 with 50 iterations; compare this historical measurement to your own environment rather than treating it as a universal speed guarantee.
+
+| Metric | Bash + jq statusline | claude-statusline |
+| --- | ---: | ---: |
+| Mean elapsed time | 24.70 ms | 0.50 ms |
+| Minimum / maximum | 11.29 / 97.27 ms | 0.43 / 1.02 ms |
+| Child subprocesses per render | 6–8 | 0 |
+
+The original benchmark fixture and runner are not included yet, so these figures are **not independently reproducible from this repository as-is**. The project needs a checked-in repeatable benchmark before making broader performance claims.
+
+## Implementation notes
+
+- Parses Claude Code's JSON from stdin, falling back gracefully when optional fields are absent.
+- Reads Git branch from `.git/HEAD` rather than executing `git`.
+- Writes quota cache files locally with an advisory lock; it does not fetch account quotas from the network.
+- Uses the values provided by Claude Code (or the local cache); quota percentages may be unavailable or stale until fresh session data arrives.
+
+## Feedback
+
+If installation or rendering fails, [open an issue](https://github.com/yesvus/claude-statusline/issues/new) with your OS, CPU architecture, Claude Code version, and reproduction steps. Do not share session secrets or unredacted payloads.
 
 ## License
 
