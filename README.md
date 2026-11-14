@@ -13,6 +13,20 @@ A lightweight, native Rust statusline for [Claude Code](https://docs.anthropic.c
 
 **Supported prebuilt releases:** macOS (Apple Silicon and Intel), Linux (x86_64 and aarch64). Windows is not supported.
 
+## Install with an AI coding agent
+
+Copy this prompt to your coding agent:
+
+~~~text
+Help me install https://github.com/yesvus/claude-statusline.
+Read INSTALL_PROMPT.md first. Check OS/architecture and whether
+to build from source or trust an unsigned prebuilt release.
+Preserve my existing Claude Code settings and ask before changes.
+Verify the actual installed statusline and provide rollback.
+~~~
+
+[Full agent installation prompt](INSTALL_PROMPT.md).
+
 ## Install in under a minute
 
 ### Option A: Download a release
